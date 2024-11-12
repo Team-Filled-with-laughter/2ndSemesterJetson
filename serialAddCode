@@ -1,0 +1,18 @@
+import serial  # pip install pyserial
+import struct
+import time
+
+# 시리얼 포트 설정 (적절한 포트를 확인하세요)
+arduino = serial.Serial('/dev/ttyUSB0', 9600)  # 아두이노가 연결된 포트로 변경하세요
+time.sleep(2)  # 시리얼 포트 안정화 대기
+
+def read_arduino():  #actuatorPlay()에 speed = read_arduino() 추가
+    if arduino.in_waiting >= 8:  # double 값은 8바이트이므로 8바이트가 수신될 때까지 대기
+        # 8바이트 데이터를 읽음
+        byte_data = arduino.read(8)
+
+        # 바이트 데이터를 double로 변환
+        speed = struct.unpack('d', byte_data)[0]  # 'd'는 double 형식
+        print(f"Received speed: {speed}")
+
+        return speed
