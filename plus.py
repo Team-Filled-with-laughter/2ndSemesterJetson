@@ -28,6 +28,7 @@ def update_threshold():
     if threshold is not None:
         global overSpeed
         overSpeed = threshold  # threshold 값으로 overSpeed 업데이트
+        print(f"overSpeed 값이 {threshold}로 변경되었습니다.")  # 변경된 값 출력
         return jsonify({"message": "임계값 업데이트 성공", "threshold": overSpeed}), 200
     else:
         return jsonify({"error": "임계값을 찾을 수 없습니다."}), 400
