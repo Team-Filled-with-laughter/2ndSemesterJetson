@@ -12,11 +12,9 @@ def speed_feed():
 
 @app.route('/update_threshold', methods=['POST', 'OPTIONS'])
 def update_threshold():
-    # 이거 없으면 cors 걸림
+    # CORS preflight 요청 처리
     if request.method == 'OPTIONS':
-        # CORS preflight 요청 처리
         response = Response()
-        # CORS 관련 헤더 추가
         response.headers['Access-Control-Allow-Origin'] = 'https://team-filled-with-laughter.netlify.app'  # React 앱의 출처만 허용
         response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'  # 허용할 메서드
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'  # 허용할 헤더
@@ -28,7 +26,9 @@ def update_threshold():
     threshold = data.get('threshold')
 
     if threshold is not None:
-        return jsonify({"message": "임계값 업데이트 성공", "threshold": threshold}), 200
+        global overSpeed
+        overSpeed = threshold  # threshold 값으로 overSpeed 업데이트
+        return jsonify({"message": "임계값 업데이트 성공", "threshold": overSpeed}), 200
     else:
         return jsonify({"error": "임계값을 찾을 수 없습니다."}), 400
 
