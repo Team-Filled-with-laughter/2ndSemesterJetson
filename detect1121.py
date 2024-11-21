@@ -183,10 +183,17 @@ def apply_clahe(image):
 @app.route('/speed_feed')
 def speed_feed():
     return Response(actuatorPlay(), content_type='text/event-stream') # 이렇게하면 web실행할때만 될듯?
+    
+###################################################################
+@app.route('/start_speed_check', methods=['POST'])
+def start_speed_check():
+    # 백그라운드에서 speedCheck1을 실행하기 위해 새로운 스레드 생성
+    speed_check_thread = threading.Thread(target=speedCheck1)
+    speed_check_thread.daemon = True  # 이 옵션을 설정하면 메인 프로세스가 종료될 때 해당 스레드도 종료됩니다.
+    speed_check_thread.start()
 
-@app.route('/speedCheck1_feed')
-def speedCheck1_feed():
-    return Response(speedCheck1(), content_type='text/event-stream') # 이렇게하면 web실행할때만 될듯?
+    return jsonify({"message": "Speed check started."}), 200
+###################################################################
 
 @app.route('/update_threshold', methods=['POST', 'OPTIONS'])
 def update_threshold():
