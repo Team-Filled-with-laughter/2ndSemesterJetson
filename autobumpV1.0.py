@@ -24,7 +24,7 @@ import threading
 app = Flask(__name__)
 
 # React 앱의 출처만 허용하고, credentials: 'include'도 허용
-CORS(app)
+CORS(app, supports_credentials=True)
 
 # GPIO 핀 설정
 sigPin1 = 21
@@ -178,6 +178,13 @@ def update_threshold():
     # CORS preflight 요청 처리
     if request.method == 'OPTIONS':
         response = Response()
+        origin = request.headers.get('Origin')
+        allowed_origins = ['http://localhost:8080', 'http://localhost:5001']  # List of allowed origins
+
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        else:
+            response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'  # 허용할 메서드
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'  # 허용할 헤더
         response.headers['Access-Control-Allow-Credentials'] = 'true'  # 쿠키 포함 허용
@@ -200,6 +207,13 @@ def update_actuator():
     # CORS preflight 요청 처리
     if request.method == 'OPTIONS':
         response = Response()
+        origin = request.headers.get('Origin')
+        allowed_origins = ['http://localhost:8080', 'http://localhost:5001']  # List of allowed origins
+
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        else:
+            response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'  # 허용할 메서드
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'  # 허용할 헤더
         response.headers['Access-Control-Allow-Credentials'] = 'true'  # 쿠키 포함 허용
