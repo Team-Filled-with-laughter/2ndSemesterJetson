@@ -4,12 +4,13 @@ import signal
 import sys
 from flask import Flask, Response, request, jsonify
 from flask_cors import CORS  # CORS를 import 합니다
+from pathlib import Path
 import PulseIn
 import serial
 import cv2
 import torch
 from numpy import random
-
+import torch.backends.cudnn as cudnn
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
@@ -115,10 +116,10 @@ def actuatorPlay():
     while 1:
         v1 = getMax(listA)
         speed = read_arduino()
-        yield f"data: {{\"v1\": {v1}, \"v2\": {speed}}}\n\n"
         isOverSpeed = False
         if (speed > 0):
             isOverSpeed = (speed >= overSpeed) or (v1 >= overSpeed)
+            yield f"data: {{\"v1\": {v1}, \"v2\": {speed}}}\n\n".encode('utf-8')
             print('isOverSpeed: ', isOverSpeed)
             print('speed :', speed)
             print('v1 :', v1)
@@ -141,15 +142,11 @@ def actuatorPlay():
 def speedCheck1():
     while 1:
         v1 = 0
-        million = 1000000
-        start_time = time.time() * million
-
         while GPIO.input(sigPin1):
             pass
         while not GPIO.input(sigPin1):
             pass
-        end_time = time.time() * million
-        duration = end_time - start_time
+        duration = 0
 
         if duration != 0:
             frequency = 1.0 / duration
@@ -174,9 +171,6 @@ def apply_clahe(image):
 
 @app.route('/speed_feed')
 def speed_feed():
-    speed_check_thread = threading.Thread(target=speedCheck1)
-    speed_check_thread.daemon = True
-    speed_check_thread.start()
     return Response(actuatorPlay(), content_type='text/event-stream')  # 이렇게하면 web실행할때만 될듯?
 
 @app.route('/update_threshold', methods=['POST', 'OPTIONS'])
@@ -231,7 +225,14 @@ def update_actuator():
 def detect(save_img=False):
     source, weights, view_img, save_txt, imgsz = opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size
     save_img = not opt.nosave and not source.endswith('.txt')  # save inference images
-    global isEmergency
+    webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
+        ('rtsp://', 'rtmp://', 'http://', 'https://'))
+
+  
+
+    # Directories
+    save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
+    (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
 
     # Initialize
     set_logging()
@@ -245,7 +246,14 @@ def detect(save_img=False):
     if half:
         model.half()  # to FP16
 
-    dataset = LoadImages(source, img_size=imgsz, stride=stride)
+    # Set Dataloader
+    vid_path, vid_writer = None, None
+    if webcam:
+        view_img = check_imshow()
+        cudnn.benchmark = True  # set True to speed up constant image size inference
+        dataset = LoadStreams(source, img_size=imgsz, stride=stride)
+    else:
+        dataset = LoadImages(source, img_size=imgsz, stride=stride)
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
@@ -278,8 +286,16 @@ def detect(save_img=False):
 
         # Process detections
         for i, det in enumerate(pred):  # detections per image
-            p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
+            if webcam:  # batch_size >= 1
+                p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
+            else:
+                p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
+
+            p = Path(p)  # to Path
+            save_path = str(save_dir / p.name)  # img.jpg
+            txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             s += '%gx%g ' % img.shape[2:]  # print string
+            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -290,14 +306,17 @@ def detect(save_img=False):
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
                     ################################################################################
-                    # send signal
-                    if names[int(c)] == "Ambulance" or names[int(c)] == "Police":
-                        isEmergency = True  # catch am pol
-                        print('emergency change')
+                 
                     #################################################################################
 
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
+                    if save_txt:  # Write to file
+                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+                        line = (cls, *xywh, conf) if opt.save_conf else (cls, *xywh)  # label format
+                        with open(txt_path + '.txt', 'a') as f:
+                            f.write(('%g ' * len(line)).rstrip() % line + '\n')
+
                     if save_img or view_img:  # Add bbox to image
                         label = f'{names[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
@@ -352,7 +371,6 @@ if __name__ == '__main__':
 
     opt = parser.parse_args()
     print(opt)
-    check_requirements(exclude=('pycocotools', 'thop'))
     clear(listA)
 
 
@@ -365,7 +383,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, lambda s, f: cleanup())
 
     try:
-        app.run(debug=True, host='0.0.0.0', threaded=True, port=5001)  # React 앱과 포트 충돌 피하려면 다른 포트 사용
+        app.run(host='0.0.0.0', threaded=True, port=5001)  # React 앱과 포트 충돌 피하려면 다른 포트 사용
     except Exception as e:
         print(f"An error occurred: {e}")
         cleanup()
